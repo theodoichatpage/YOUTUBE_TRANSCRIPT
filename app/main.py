@@ -6,11 +6,15 @@ from .errors import TranscriptServiceError
 from .models import LanguageTrack, TranscriptRequest, TranscriptResult
 from .youtube import YouTubeTranscriptProvider
 
-app = FastAPI(title="YOUTUBE_TRANSCRIPT", version="0.1.0")
+SERVICE_VERSION = "0.1.1"
+
+app = FastAPI(title="YOUTUBE_TRANSCRIPT", version=SERVICE_VERSION)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://video-image-studio.vercel.app",
+        "https://video-image-studio-git-phase3-manager-presence-image-studio1.vercel.app",
+        "https://video-image-studio-git-phase3-identity-monitor-preview-image-studio1.vercel.app",
         "http://localhost:5173",
         "http://127.0.0.1:5173",
     ],
@@ -27,7 +31,7 @@ def transcript_error(_: Request, exc: TranscriptServiceError):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "YOUTUBE_TRANSCRIPT", "version": "0.1.0"}
+    return {"status": "ok", "service": "YOUTUBE_TRANSCRIPT", "version": SERVICE_VERSION}
 
 
 @app.post("/transcript", response_model=TranscriptResult)
@@ -38,3 +42,4 @@ def transcript(body: TranscriptRequest):
 @app.get("/transcript/{video_id}/languages", response_model=list[LanguageTrack])
 def languages(video_id: str):
     return provider.list_languages(video_id)
+
