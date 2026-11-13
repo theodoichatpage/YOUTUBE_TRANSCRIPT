@@ -19,7 +19,7 @@ app.add_middleware(
         "http://localhost:5173",
         "http://127.0.0.1:5173",
     ],
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type"],
 )
 provider = YouTubeTranscriptProvider()
@@ -45,6 +45,12 @@ def transcript(body: TranscriptRequest):
 def languages(video_id: str):
     return provider.list_languages(video_id)
 
+
+
+@app.delete("/media/jobs/{job_id}")
+def cancel_media_job(job_id: str):
+    """Studio's Stop: the job ends at its next step, so the CPU is free for the next link."""
+    return media_jobs.cancel(job_id)
 
 
 @app.post("/media/jobs", status_code=202)

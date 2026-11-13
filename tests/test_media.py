@@ -129,3 +129,35 @@ def test_rejects_non_web_links(monkeypatch):
 def test_facebook_title_drops_view_counts():
     assert clean_title("7.2K views · 63 reactions | Mẹ không hề dữ | Từng Bước Con Đi") == "Mẹ không hề dữ | Từng Bước Con Đi"
     assert clean_title("Video hay | Kênh A") == "Video hay | Kênh A"
+
+
+def test_stop_ends_running_job_and_frees_the_queue():
+    gate = threading.Event()
+    jobs = MediaJobs(FakeBackend(gate=gate))
+    a = jobs.submit("https://a.example/v/stop", "vi")
+    b = jobs.submit("https://a.example/v/next", "vi")
+    time.sleep(0.1)
+    assert jobs.cancel(b["id"])["status"] == "cancelled"  # a queued job stops at once
+    jobs.cancel(a["id"])
+    gate.set()
+    assert wait_done_or(jobs, a["id"])["status"] == "cancelled"
+    again = jobs.submit("https://a.example/v/stop", "vi")
+    assert again["id"] != a["id"], "a stopped link starts fresh when asked again"
+    assert wait_done(jobs, again["id"])["status"] == "done"
+
+
+def wait_done_or(jobs, job_id):
+    for _ in range(200):
+        job = jobs.get(job_id)
+        if job["status"] in {"done", "error", "cancelled"}:
+            return job
+        time.sleep(0.02)
+    raise AssertionError("job did not finish")
+
+
+def test_cancel_api(monkeypatch):
+    monkeypatch.setattr(main, "media_jobs", MediaJobs(FakeBackend(gate=threading.Event())))
+    client = TestClient(app)
+    job_id = client.post("/media/jobs", json={"url": "https://a.example/v/x"}).json()["id"]
+    assert client.delete(f"/media/jobs/{job_id}").status_code == 200
+    assert client.delete("/media/jobs/nope").status_code == 404

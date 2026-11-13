@@ -28,6 +28,7 @@ STAGE_TEXT = {
     "loading_model": "Đang nạp model nhận giọng nói (lần đầu tải ~1,6 GB)",
     "transcribing": "Đang nhận giọng nói",
     "done": "Xong",
+    "cancelled": "Đã dừng",
     "error": "Lỗi",
 }
 
@@ -61,6 +62,10 @@ def clean_title(title: str) -> str:
     return STATS_PREFIX.sub("", title).strip()
 
 
+class Cancelled(Exception):
+    pass
+
+
 class YtDlpWhisper:
     """Real downloader and speech-to-text. Tests swap this for a fake."""
 
@@ -91,6 +96,8 @@ class YtDlpWhisper:
             with yt_dlp.YoutubeDL(options) as ydl:
                 info = ydl.extract_info(url, download=True)
         except Exception as exc:
+            if isinstance(exc, Cancelled) or isinstance(getattr(exc, "exc_info", [None, None])[1], Cancelled):
+                raise Cancelled() from exc
             raise _download_error(exc) from exc
         if info.get("_type") == "playlist":
             entries = [entry for entry in info.get("entries") or [] if entry]
@@ -161,7 +168,7 @@ class MediaJobs:
         with self.lock:
             for job_id in reversed(self.order):
                 job = self.jobs[job_id]
-                if job["url"] == url and job["language"] == language and job["status"] != "error":
+                if job["url"] == url and job["language"] == language and job["status"] not in {"error", "cancelled"}:
                     return self._public(job)
             now = time.time()
             job = {
@@ -189,7 +196,20 @@ class MediaJobs:
                 raise TranscriptServiceError("JOB_NOT_FOUND", "Không tìm thấy việc lấy transcript này (Engine có thể vừa khởi động lại).", 404)
             return self._public(job)
 
+    def cancel(self, job_id: str) -> dict:
+        with self.lock:
+            job = self.jobs.get(job_id)
+            if not job:
+                raise TranscriptServiceError("JOB_NOT_FOUND", "Không tìm thấy việc lấy transcript này.", 404)
+            if job["status"] not in {"done", "error", "cancelled"}:
+                job["cancel"] = True
+                if job["status"] == "queued":
+                    job["status"], job["message"] = "cancelled", STAGE_TEXT["cancelled"]
+            return self._public(job)
+
     def _set(self, job: dict, status: str | None = None, progress: float | None = None, **extra):
+        if job.get("cancel") and status not in {"error", "cancelled"}:
+            raise Cancelled()
         with self.lock:
             if status:
                 job["status"] = status
@@ -236,6 +256,8 @@ class MediaJobs:
                 "segments": segments, "text": " ".join(item["text"] for item in segments),
             }
             self._set(job, "done", 1.0, result=result)
+        except Cancelled:
+            self._set(job, "cancelled")
         except TranscriptServiceError as exc:
             self._set(job, "error", error={"code": exc.code, "message": exc.message})
         except Exception as exc:  # keep the worker alive whatever happens
