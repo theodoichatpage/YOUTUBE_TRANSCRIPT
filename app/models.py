@@ -34,3 +34,8 @@ class TranscriptRequest(BaseModel):
         if bool(self.url) == bool(self.video_id):
             raise ValueError("Provide exactly one of url or video_id")
         return self
+
+
+class MediaJobRequest(BaseModel):
+    url: str
+    language: str | None = "vi"

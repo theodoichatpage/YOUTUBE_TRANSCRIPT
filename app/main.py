@@ -3,10 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .errors import TranscriptServiceError
-from .models import LanguageTrack, TranscriptRequest, TranscriptResult
+from .media import MediaJobs
+from .models import LanguageTrack, MediaJobRequest, TranscriptRequest, TranscriptResult
 from .youtube import YouTubeTranscriptProvider
 
-SERVICE_VERSION = "0.1.1"
+SERVICE_VERSION = "0.2.0"
 
 app = FastAPI(title="YOUTUBE_TRANSCRIPT", version=SERVICE_VERSION)
 app.add_middleware(
@@ -22,6 +23,7 @@ app.add_middleware(
     allow_headers=["Content-Type"],
 )
 provider = YouTubeTranscriptProvider()
+media_jobs = MediaJobs()
 
 
 @app.exception_handler(TranscriptServiceError)
@@ -31,7 +33,7 @@ def transcript_error(_: Request, exc: TranscriptServiceError):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "YOUTUBE_TRANSCRIPT", "version": SERVICE_VERSION}
+    return {"status": "ok", "service": "YOUTUBE_TRANSCRIPT", "version": SERVICE_VERSION, "features": ["youtube_captions", "media_link"]}
 
 
 @app.post("/transcript", response_model=TranscriptResult)
@@ -43,3 +45,14 @@ def transcript(body: TranscriptRequest):
 def languages(video_id: str):
     return provider.list_languages(video_id)
 
+
+
+@app.post("/media/jobs", status_code=202)
+def start_media_job(body: MediaJobRequest):
+    """Any video link: download the audio and turn speech into text in the background."""
+    return media_jobs.submit(body.url, body.language)
+
+
+@app.get("/media/jobs/{job_id}")
+def media_job(job_id: str):
+    return media_jobs.get(job_id)

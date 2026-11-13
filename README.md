@@ -53,3 +53,14 @@ pytest -v
 ```
 
 Sau khi test tự động đạt, dùng video `yTwvX2RJ80Q` với lệnh `/transcript` phía trên để smoke-test thật trên máy sẽ chạy service.
+
+## Link video bất kỳ (Facebook, TikTok, YouTube không có phụ đề…)
+
+Engine tải âm thanh bằng `yt-dlp` rồi nhận giọng nói ngay trên máy bằng `faster-whisper` (model `large-v3-turbo`, CPU; lần đầu tự tải ~1,6 GB). Trên CPU 4 nhân mất khoảng 1,8 lần độ dài video, nên mỗi link là một việc chạy nền, mỗi lúc một việc:
+
+```bash
+curl -X POST http://127.0.0.1:8000/media/jobs -H "Content-Type: application/json" -d "{\"url\":\"https://www.facebook.com/reel/1415564201644332\",\"language\":\"vi\"}"
+curl http://127.0.0.1:8000/media/jobs/<id>
+```
+
+`status`: `queued` → `downloading` → `loading_model` → `transcribing` → `done` (kèm `result` cùng dạng `/transcript`, thêm `title`, `thumbnail`, `duration`, `source: "speech"`) hoặc `error` (`error.code`, `error.message`). Chỉ tải được video công khai. Biến môi trường: `TRANSCRIPT_WHISPER_MODEL` (mặc định `large-v3-turbo`), `TRANSCRIPT_MAX_SECONDS` (mặc định 3 giờ). Trang web đổi cách chống tải thường xuyên: khi link từng chạy bỗng lỗi tải, cập nhật `yt-dlp` (`pip install -U yt-dlp`) hoặc chạy lại bộ cài.
