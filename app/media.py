@@ -25,7 +25,7 @@ STATS_PREFIX = re.compile(r"^\s*[\d.,]+\s*[KMB]?\s+views?\b[^|]*\|\s*", re.IGNOR
 STAGE_TEXT = {
     "queued": "Đang chờ lượt",
     "downloading": "Đang tải âm thanh từ link",
-    "loading_model": "Đang nạp model nhận giọng nói (lần đầu tải ~1,6 GB)",
+    "loading_model": "Đang nạp model nhận giọng nói vào bộ nhớ",
     "transcribing": "Đang nhận giọng nói",
     "done": "Xong",
     "cancelled": "Đã dừng",
@@ -64,6 +64,20 @@ def clean_title(title: str) -> str:
 
 class Cancelled(Exception):
     pass
+
+
+FIRST_DOWNLOAD_TEXT = "Đang tải model nhận giọng nói về máy (~1,6 GB, chỉ một lần duy nhất)"
+
+
+def model_on_disk() -> bool:
+    """The model is downloaded once and kept; after that loading it only takes a moment, no download."""
+    try:
+        from faster_whisper.utils import download_model
+
+        download_model(MODEL_NAME, local_files_only=True)
+        return True
+    except Exception:
+        return False
 
 
 class YtDlpWhisper:
@@ -124,7 +138,7 @@ class YtDlpWhisper:
     def _load(self, loading):
         with self._model_lock:
             if self._model is None:
-                loading()
+                loading(not model_on_disk())
                 from faster_whisper import WhisperModel
 
                 self._model = WhisperModel(MODEL_NAME, device="cpu", compute_type="int8", cpu_threads=os.cpu_count() or 4)
@@ -244,7 +258,7 @@ class MediaJobs:
             self._set(job, progress=0.15, title=media["title"])
             segments, language, total = self.backend.transcribe(
                 media["path"], job["language"],
-                lambda: self._set(job, "loading_model"),
+                lambda first=False: self._set(job, "loading_model", **({"message": FIRST_DOWNLOAD_TEXT} if first else {})),
                 lambda f: self._set(job, "transcribing", 0.15 + 0.85 * f),
             )
             if not segments:

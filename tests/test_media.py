@@ -161,3 +161,24 @@ def test_cancel_api(monkeypatch):
     job_id = client.post("/media/jobs", json={"url": "https://a.example/v/x"}).json()["id"]
     assert client.delete(f"/media/jobs/{job_id}").status_code == 200
     assert client.delete("/media/jobs/nope").status_code == 404
+
+
+def test_download_text_only_when_model_is_not_on_disk():
+    seen = {}
+
+    class Loading(FakeBackend):
+        def __init__(self, first):
+            super().__init__()
+            self.first = first
+
+        def transcribe(self, path, language, loading, progress):
+            loading(self.first)
+            seen[self.first] = jobs.get(job["id"])["message"]
+            return super().transcribe(path, language, lambda: None, progress)
+
+    for first in (True, False):
+        jobs = MediaJobs(Loading(first))
+        job = jobs.submit(f"https://a.example/v/load{first}", "vi")
+        wait_done(jobs, job["id"])
+    assert "1,6 GB" in seen[True]
+    assert "GB" not in seen[False]
